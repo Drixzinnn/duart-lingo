@@ -183,7 +183,7 @@ const ls={get(k){try{return localStorage.getItem(k)}catch(e){return mem[k]??null
 const users=()=>{try{return JSON.parse(ls.get("dl_users")||"{}")}catch(e){return{}}};
 const putUsers=u=>ls.set("dl_users",JSON.stringify(u));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const rankList=()=>ROWS.map(r=>({k:r.id,n:r.name,xp:r.id===me?S.xp:(r.xp||0),d:(r.done||[]).length})).sort((a,b)=>b.xp-a.xp||a.n.localeCompare(b.n));
+const rankList=()=>{const u=users();return Object.keys(u).map(k=>({k,n:u[k].name,xp:u[k].data.xp||0,d:(u[k].data.done||[]).length})).sort((a,b)=>b.xp-a.xp||a.n.localeCompare(b.n))};
 const rankHTML=()=>{const md=["🥇","🥈","🥉"];return rankList().map((x,i)=>`<li class="${x.k===me?"me":""}"><span class="pos">${md[i]||i+1}</span><span class="nm">${esc(x.n)}${x.k===me?" (você)":""}<small>${x.d} de ${L.length} lições</small></span><b>⭐ ${x.xp}</b></li>`).join("")||"<li>Nenhum aluno ainda.</li>"};
 function rankView(){
  document.getElementById("app").innerHTML=`<header><div class="logo"><img src="${OWL}" alt="">Ranking</div><button class="out" id="rb">Voltar</button></header>
@@ -194,8 +194,7 @@ function rankView(){
 const fresh=()=>({xp:0,streak:0,done:[],hearts:5});
 let me=null,S=fresh();
 async function hash(s,p){try{const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s+":"+p));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let n=5381;for(const c of s+":"+p)n=(n*33+c.charCodeAt(0))>>>0;return "x"+n}}
-let ME=null,ROWS=[],unsub=null;
-const save=()=>{if(me&&ME)FB.save(me,S)};
+const save=()=>{if(!me)return;const u=users();if(u[me]){u[me].data=S;putUsers(u)}};
 const $=id=>document.getElementById(id);
 const norm=t=>t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[¿?¡!.,]/g,"").trim();
 const shuf=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
@@ -211,7 +210,7 @@ function home(){
  <h1>Espanhol para brasileiros</h1><p class="sub">${S.done.length} de ${L.length} lições concluídas. Escolha uma e pratique.</p>
  <div class="path">${L.map((l,i)=>`<div class="node"><button class="dot ${S.done.includes(i)?"done":""}" data-i="${i}" ${unlocked(i)?"":"disabled"} aria-label="Lição ${l.n}">${unlocked(i)?l.e:"🔒"}</button>
  <div><b>${l.n}</b><small>${S.done.includes(i)?"Concluída ✓":unlocked(i)?"Pronta para começar":"Conclua a lição anterior"}</small></div></div>`).join("")}</div>`;
- $("nm").textContent=ME.name;$("out").onclick=()=>FB.signOut();
+ $("nm").textContent=(users()[me]||{}).name||"";$("out").onclick=()=>{ls.set("dl_session","");me=null;auth("in")};
  $("rkb").onclick=rankView;
  $("owl").onclick=()=>{hc++;$("say").textContent=hi[hc%hi.length]};
  document.querySelectorAll(".dot").forEach(b=>b.onclick=()=>study(+b.dataset.i));
@@ -272,6 +271,53 @@ function end(win){
  <button class="btn" id="back">CONTINUAR</button><br><button class="btn ghost" id="again">${win?"REFAZER LIÇÃO":"TENTAR DE NOVO"}</button></div>`;
  $("back").onclick=home;$("again").onclick=()=>quiz(cur);
 }
+const ADMIN="3a1aecb2717c2d4d9c18a5d922844d9e31b193cc991b2bea2a9d2b0bcbe98f8d";
+function admin(){
+ const u=users(),ks=Object.keys(u).sort((a,b)=>(u[b].data.xp||0)-(u[a].data.xp||0));
+ const tot=ks.reduce((s,k)=>s+(u[k].data.xp||0),0),les=ks.reduce((s,k)=>s+(u[k].data.done||[]).length,0);
+ const e=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ document.getElementById("app").innerHTML=`<header><div class="logo"><img src="${OWL}" alt="">Painel do professor</div><button class="out" id="aout">Sair</button></header>
+ <div class="sum"><div class="b"><strong>${ks.length}</strong>Alunos</div><div><strong>${tot}</strong>XP total</div><div class="b"><strong>${les}</strong>Lições feitas</div></div>
+ <p class="sub">Alunos com conta neste aparelho, do maior XP para o menor.</p>
+ ${ks.length?ks.map((k,i)=>{const d=u[k].data,n=(d.done||[]).length;return `<div class="stu" data-k="${e(k)}"><div class="sh"><b>${i+1}. ${e(u[k].name)}</b><span>⭐ ${d.xp||0} · 🔥 ${d.streak||0} · ❤️ ${d.hearts}</span></div><div class="bar"><i style="width:${n/L.length*100}%"></i></div><small>${n} de ${L.length} lições concluídas</small><div class="acts"><input class="txt np" type="password" placeholder="Nova senha" aria-label="Nova senha de ${e(u[k].name)}"><button class="btn ghost s" data-a="pw">Trocar senha</button><button class="btn ghost s" data-a="rs">Zerar progresso</button><button class="btn bad s" data-a="del">Excluir conta</button></div><div class="err"></div></div>`}).join(""):`<p class="sub">Nenhum aluno cadastrado ainda.</p>`}`;
+ $("aout").onclick=()=>{ls.set("dl_session","");auth("in")};
+ document.querySelectorAll(".stu").forEach(c=>{const k=c.dataset.k,m=c.querySelector(".err");
+  c.querySelectorAll("[data-a]").forEach(b=>b.onclick=async()=>{
+   const a=b.dataset.a,uu=users();
+   if(a!=="pw"&&b.dataset.c!=="1"){b.dataset.c="1";b.textContent="Confirmar?";return}
+   if(a==="pw"){const v=c.querySelector(".np").value;m.style.color="";if(v.length<4){m.textContent="A nova senha precisa ter pelo menos 4 caracteres.";return}uu[k].hash=await hash(uu[k].salt,v);putUsers(uu);m.style.color="var(--gd)";m.textContent="Senha trocada.";c.querySelector(".np").value="";return}
+   if(a==="rs")uu[k].data=fresh();else delete uu[k];
+   putUsers(uu);admin();
+  })})
+}
+let tm=null;
+function study(i){
+ cur=i;const l=L[i],cards=[{tip:TIP[i]},...l.w.map(w=>({w,ex:(EX[w[0]]||"|").split("|")}))];
+ let k=0;const end=Date.now()+STUDY*1000,skip=S.done.includes(i);
+ const stop=()=>{clearInterval(tm);try{speechSynthesis.cancel()}catch(e){}};
+ document.getElementById("app").innerHTML=`<div class="lesson"><div class="top"><button class="x" id="quit" aria-label="Sair do estudo">✕</button><div class="bar"><i id="pb"></i></div><b id="tt">⏱ 05:00</b></div>
+ <div class="q"><h2>Estudo: ${l.n} ${l.e}</h2><div id="card"></div>
+ <div class="nav"><button class="btn ghost" id="pv">ANTERIOR</button><button class="btn ghost" id="nx">PRÓXIMA</button></div></div>
+ <div class="foot"><button class="btn" id="go" disabled>EXERCÍCIOS</button>${skip?'<button class="btn ghost" id="sk" style="margin-top:10px">PULAR ESTUDO</button>':""}</div></div>`;
+ const draw=()=>{const c=cards[k];
+  $("card").innerHTML=c.tip?`<div class="ask"><img src="${OWL}" alt=""><div class="bubble">${esc(c.tip)}</div></div><p class="sub">Leia a dica e toque em Próxima. São ${cards.length-1} palavras para estudar com calma.</p>`
+  :`<div class="wc"><div class="big">${esc(c.w[0])}</div><div><button class="spk" data-t="${esc(c.w[0])}">🔊 Ouvir</button></div><div class="tr">${esc(c.w[1])}</div>
+  <div class="exs"><b>${esc(c.ex[0])}</b><div><button class="spk" data-t="${esc(c.ex[0])}">🔊 Ouvir a frase</button></div><small>${esc(c.ex[1])}</small></div>
+  <input class="txt" id="pr" autocomplete="off" autocapitalize="none" placeholder="Digite a palavra para treinar" aria-label="Treino de escrita"><div class="err" id="pf" style="color:var(--gd)"></div></div><p class="sub">Palavra ${k} de ${cards.length-1}</p>`;
+  document.querySelectorAll(".spk").forEach(b=>b.onclick=()=>{try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(b.dataset.t);u.lang="es-ES";u.rate=.85;speechSynthesis.speak(u)}catch(e){}});
+  const p=$("pr");if(p)p.oninput=()=>{$("pf").textContent=norm(p.value)===norm(c.w[0])?"¡Muy bien! ✓":""};
+ };
+ $("pv").onclick=()=>{k=(k+cards.length-1)%cards.length;draw()};
+ $("nx").onclick=()=>{k=(k+1)%cards.length;draw()};
+ $("quit").onclick=()=>{stop();home()};
+ $("go").onclick=()=>{stop();start(i)};
+ if($("sk"))$("sk").onclick=()=>{stop();start(i)};
+ const tick=()=>{if(!$("tt")){clearInterval(tm);return}
+  const s=Math.max(0,Math.ceil((end-Date.now())/1000)),m=String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+  $("tt").textContent="⏱ "+m;$("pb").style.width=(1-s/STUDY)*100+"%";
+  $("go").disabled=s>0;$("go").textContent=s>0?"EXERCÍCIOS LIBERAM EM "+m:"COMEÇAR EXERCÍCIOS"};
+ clearInterval(tm);tm=setInterval(tick,1000);draw();tick();
+}
 function study(i){
  const l=L[i],n=l.s.length,skip=S.done.includes(i),end=Date.now()+STUDY*1000;let c=0;
  const say=t=>{try{const u=new SpeechSynthesisUtterance(t);u.lang="es-ES";u.rate=.85;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}};
@@ -291,36 +337,31 @@ function study(i){
   if(!skip){if(r===0){g.disabled=false;g.textContent="COMEÇAR AS PERGUNTAS"}else g.textContent="As perguntas liberam em "+m}};
  const t=setInterval(tick,500);tick();
 }
-window.onFatal=m=>{document.getElementById("app").innerHTML=`<div class="end"><img src="${OWL}" alt=""><h1>Quase lá</h1><p class="sub"></p></div>`;document.querySelector(".end .sub").textContent=m};
-window.onUser=(u,d)=>{
- if(unsub){unsub();unsub=null}
- if(!u){me=null;ME=null;ROWS=[];S=fresh();return auth("in")}
- ME=u;me=u.uid;
- unsub=FB.watchRank(r=>{ROWS=r;
-  const m=r.find(x=>x.id===me);
-  if(m&&(m.xp+50<S.xp||(m.done||[]).length<S.done.length)){S=Object.assign(fresh(),m);if(document.querySelector(".path"))home()}});
- S=Object.assign(fresh(),d);home();
-};
+function login(k){me=k;ls.set("dl_session",k);S=Object.assign(fresh(),users()[k].data);home()}
 function auth(mode){
  mode=mode||"new";
  document.getElementById("app").innerHTML=`<div class="end"><img src="${OWL}" alt="Duart Lingo">
  <h1>Duart Lingo</h1><p class="sub">Aprenda espanhol de graça. Só precisa de um nome e uma senha.</p>
  <div class="tabs"><button class="tab ${mode==="new"?"on":""}" data-m="new">Criar conta</button><button class="tab ${mode==="in"?"on":""}" data-m="in">Entrar</button></div>
  <div class="fields"><input class="txt" id="un" autocomplete="username" maxlength="20" placeholder="Seu nome" aria-label="Seu nome">
- <input class="txt" id="pw" type="password" autocomplete="${mode==="new"?"new-password":"current-password"}" placeholder="Senha (mínimo 6 caracteres)" aria-label="Senha">
+ <input class="txt" id="pw" type="password" autocomplete="${mode==="new"?"new-password":"current-password"}" placeholder="Senha (mínimo 4 caracteres)" aria-label="Senha">
  <div class="err" id="err" role="alert"></div>
  <button class="btn" id="sub">${mode==="new"?"CRIAR CONTA":"ENTRAR"}</button></div></div>`;
  document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>auth(t.dataset.m));
  const err=m=>{$("err").textContent=m};
  const go=async()=>{
-  const name=$("un").value.trim().replace(/\s+/g," "),pw=$("pw").value;
+  const name=$("un").value.trim().replace(/\s+/g," "),pw=$("pw").value,key=name.toLowerCase(),u=users();
   if(name.length<2)return err("Digite um nome com pelo menos 2 letras.");
-  if(pw.length<6)return err("A senha precisa ter pelo menos 6 caracteres.");
-  err("");$("sub").disabled=true;
-  try{mode==="new"?await FB.signUp(name,pw):await FB.signIn(name,pw)}catch(e){err(e.message);if($("sub"))$("sub").disabled=false}
+  if(pw.length<4)return err("A senha precisa ter pelo menos 4 caracteres.");
+  if(key==="professor"){if(mode==="new")return err("Esse nome é reservado.");if(await hash("dl-admin",pw)!==ADMIN)return err("Nome ou senha incorretos.");ls.set("dl_session","__admin__");return admin()}
+  if(mode==="new"){
+   if(u[key])return err("Esse nome já existe neste aparelho. Escolha outro ou toque em Entrar.");
+   const salt=Math.random().toString(36).slice(2)+Date.now().toString(36);
+   u[key]={name,salt,hash:await hash(salt,pw),data:fresh()};putUsers(u);
+  }else if(!u[key]||u[key].hash!==await hash(u[key].salt,pw))return err("Nome ou senha incorretos.");
+  login(key);
  };
  $("sub").onclick=go;$("pw").onkeydown=e=>{if(e.key==="Enter")go()};$("un").onkeydown=e=>{if(e.key==="Enter")$("pw").focus()};
 }
-document.getElementById("app").innerHTML='<p class="sub" style="padding:60px 0;text-align:center">Carregando…</p>';
-</script>
-<script type="module" src="./firebase.js"></script></body></html>
+(function(){const k=ls.get("dl_session");if(k==="__admin__")admin();else if(k&&users()[k])login(k);else auth("new")})();
+</script></body></html>
